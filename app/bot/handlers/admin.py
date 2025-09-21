@@ -6,6 +6,12 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from sqlalchemy import select, func, and_, desc, or_
 
+from aiogram.types import Message
+from aiogram.filters import StateFilter
+
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
 from app.database.models.user import User
 from app.database.models.task import Task, TaskStatus
 from app.database.models.task_execution import TaskExecution, ExecutionStatus
@@ -13,7 +19,7 @@ from app.database.models.transaction import Transaction, TransactionType
 from app.services.user_service import UserService
 from app.services.task_service import TaskService
 from app.services.transaction_service import TransactionService
-from app.services.check_service import CheckService
+from app.services.subscription_check import CheckService
 from app.bot.keyboards.admin import (
     AdminCallback, get_admin_menu_keyboard, get_moderation_keyboard,
     get_task_moderation_keyboard, get_user_management_keyboard
@@ -1385,12 +1391,10 @@ async def export_system_data(callback: CallbackQuery):
 # ОБРАБОТЧИКИ ОТМЕНЫ
 # =============================================================================
 
-@router.message(F.text.in_(["❌ Отмена", "/cancel"]), state="*")
-async def cancel_admin_action(message: Message, state: FSMContext):
-    """Отмена админского действия"""
+class SomeState(StatesGroup):
+    some_state = State()
+
+@router.message(F.text.in_(["❌ Отмена", "/cancel"]), StateFilter(SomeState.some_state))
+async def cancel_handler(message: Message, state: FSMContext):
     await state.clear()
-    
-    await message.answer(
-        "❌ Действие отменено",
-        reply_markup=get_admin_menu_keyboard()
-    )
+    await message.answer("Отменено")

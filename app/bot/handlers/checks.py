@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from app.database.models.user import User
 from app.database.models.check import CheckType
-from app.services.check_service import CheckService
+from app.services.subscription_check import CheckService
 from app.bot.keyboards.checks import (
     CheckCallback, get_checks_menu_keyboard, get_check_type_keyboard,
     get_my_checks_keyboard, get_check_management_keyboard,
