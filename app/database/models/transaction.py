@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class TransactionType(StrEnum):
     """Типы транзакций с современным Enum"""
     DEPOSIT_STARS = "deposit_stars"
-    DEPOSIT BONUS = "deposit_bonus"
+    DEPOSIT_BONUS = "deposit_bonus"
     TASK_REWARD = "task_reward"
     TASK_CREATION = "task_creation"
     REFERRAL_BONUS = "referral_bonus"

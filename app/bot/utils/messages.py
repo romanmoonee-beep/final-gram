@@ -621,10 +621,10 @@ def validate_url(url: str) -> bool:
     
     # Паттерны для Telegram ссылок
     patterns = [
-        r'^https://t\.me/[a-zA-Z0-9_]+/?,  # Канал/группа
-        r'^https://t\.me/[a-zA-Z0-9_]+/\d+/?,  # Пост
-        r'^@[a-zA-Z0-9_]+,  # Username
-        r'^https://t\.me/\+[a-zA-Z0-9_-]+/?  # Приватная ссылка
+        r'^https://t\.me/[a-zA-Z0-9_]+/?',  # Канал/группа
+        r'^https://t\.me/[a-zA-Z0-9_]+/\d+/?',  # Пост
+        r'^@[a-zA-Z0-9_]+',  # Username
+        r'^https://t\.me/\+[a-zA-Z0-9_-]+/?'  # Приватная ссылка
     ]
     
     return any(re.match(pattern, url) for pattern in patterns)

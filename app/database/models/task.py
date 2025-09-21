@@ -121,11 +121,10 @@ class Task(Base):
         default=Decimal("0.00")
     )
     
-    # Связи
-    author: Mapped[User] = relationship(
-        back_populates="created_tasks",
+    # Связи - ИСПРАВЛЕНО
+    author: Mapped["User"] = relationship(
         foreign_keys=[author_id],
-        lazy="selectin"
+        lazy="select"  # Изменено с selectin на select
     )
     
     # Составные индексы

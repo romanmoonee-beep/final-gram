@@ -6,6 +6,8 @@ from app.services.user_service import UserService
 from app.bot.keyboards.main_menu import get_main_menu_keyboard, MainMenuCallback
 from app.bot.utils.messages import get_main_menu_text
 
+from app.database.models.user import User
+
 router = Router()
 
 @router.callback_query(MainMenuCallback.filter(F.action == "main_menu"))
@@ -119,4 +121,4 @@ async def subscription_check_placeholder(callback: CallbackQuery):
 @router.callback_query(MainMenuCallback.filter(F.action == "settings"))
 async def settings_placeholder(callback: CallbackQuery):
     """Заглушка для настроек"""
-    await callback.answer("⚙️ Настройки в разработке...", show_alert=True
+    await callback.answer("⚙️ Настройки в разработке...", show_alert=True)

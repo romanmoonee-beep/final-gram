@@ -23,6 +23,7 @@ from app.database.database import Base
 if TYPE_CHECKING:
     from app.database.models.task import Task
     from app.database.models.transaction import Transaction
+    from app.database.models.user_settings import UserSettings
 
 class UserLevel(StrEnum):
     """Современный Enum с поддержкой строк"""
@@ -123,24 +124,21 @@ class User(Base):
         default=Decimal("50.00")
     )
     
-    # Связи с современным синтаксисом
-    transactions: Mapped[list[Transaction]] = relationship(
+    # Связи с современным синтаксисом - ИСПРАВЛЕНО
+    transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="user",
-        lazy="selectin",  # Современная замена eager loading
+        lazy="select",  # Изменено с selectin на select
         cascade="all, delete-orphan"
     )
-    created_tasks: Mapped[list[Task]] = relationship(
-        back_populates="author",
+    created_tasks: Mapped[list["Task"]] = relationship(
         foreign_keys="Task.author_id",
-        lazy="selectin"
+        lazy="select"  # Изменено с selectin на select
     )
-    settings: Mapped[Optional[UserSettings]] = relationship(
-        "UserSettings",
+    settings: Mapped[Optional["UserSettings"]] = relationship(
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan"
     )
-
     
     # Составные индексы для оптимизации запросов
     __table_args__ = (
@@ -212,56 +210,3 @@ class User(Base):
             }
         }
         return configs.get(self.level, configs[UserLevel.BRONZE])
-    
-    def can_create_task(self, reward_amount: Decimal) -> tuple[bool, str]:
-        """Проверка возможности создания задания с детальным ответом"""
-        if not self.is_active:
-            return False, "Аккаунт не активен"
-        
-        if self.is_banned:
-            return False, f"Аккаунт заблокирован: {self.ban_reason}"
-        
-        config = self.get_level_config()
-        
-        # Проверка максимальной награды
-        if reward_amount > config["max_task_reward"]:
-            return False, f"Максимальная награда для вашего уровня: {config['max_task_reward']} GRAM"
-        
-        # Проверка дневного лимита
-        max_tasks = config["max_daily_tasks"]
-        if max_tasks != -1:  # Не безлимит
-            today = datetime.now().date()
-            if self.last_task_date and self.last_task_date.date() == today:
-                if self.daily_tasks_created >= max_tasks:
-                    return False, f"Дневной лимит заданий исчерпан: {max_tasks}"
-        
-        return True, "OK"
-    
-    def update_level_based_on_balance(self) -> UserLevel | None:
-        """Автоматическое обновление уровня на основе баланса"""
-        current_level = self.level
-        
-        if self.is_premium:
-            new_level = UserLevel.PREMIUM
-        elif self.balance >= Decimal("100000"):
-            new_level = UserLevel.PREMIUM
-        elif self.balance >= Decimal("50000"):
-            new_level = UserLevel.GOLD
-        elif self.balance >= Decimal("10000"):
-            new_level = UserLevel.SILVER
-        else:
-            new_level = UserLevel.BRONZE
-        
-        if new_level != current_level:
-            self.level = new_level
-            return new_level
-        
-        return None
-        
-
-    async def get_settings(self) -> "UserSettings":
-        """Получить настройки пользователя"""
-        if not self.settings:
-            from app.database.models.user_settings import UserSettings
-            self.settings = UserSettings(user_id=self.telegram_id)
-        return self.settings

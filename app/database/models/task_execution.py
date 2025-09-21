@@ -83,8 +83,8 @@ class TaskExecution(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     
     # Связи
-    task: Mapped[Task] = relationship(lazy="selectin")
-    user: Mapped[User] = relationship(lazy="selectin")
+    task: Mapped[Task] = relationship(lazy="select")
+    user: Mapped[User] = relationship(lazy="select")
     
     # Составные индексы
     __table_args__ = (

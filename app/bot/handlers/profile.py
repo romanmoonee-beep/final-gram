@@ -7,6 +7,9 @@ from app.bot.keyboards.main_menu import MainMenuCallback, get_back_to_menu_keybo
 from app.bot.keyboards.profile import get_profile_keyboard, ProfileCallback, get_deposit_keyboard
 from app.bot.utils.messages import get_profile_text, get_balance_details_text, get_deposit_text
 
+from app.database.models.user import User
+from app.config.settings import settings
+
 router = Router()
 
 @router.callback_query(MainMenuCallback.filter(F.action == "profile"))

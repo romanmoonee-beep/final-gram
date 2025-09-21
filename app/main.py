@@ -16,6 +16,8 @@ from app.database.database import init_db
 from app.bot.handlers import register_all_handlers
 from app.bot.middlewares import register_all_middlewares
 
+from app.database.models import *
+
 # Настройка структурированного логирования
 structlog.configure(
     processors=[

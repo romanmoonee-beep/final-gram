@@ -97,7 +97,7 @@ class Check(Base):
     )
     
     # Связи
-    creator: Mapped[User] = relationship(lazy="selectin")
+    creator: Mapped[User] = relationship(lazy="select")
     activations: Mapped[list[CheckActivation]] = relationship(
         back_populates="check",
         cascade="all, delete-orphan"

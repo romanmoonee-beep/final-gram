@@ -88,8 +88,22 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 async def init_db() -> None:
-    """Инициализация БД с логированием"""
+    """Инициализация БД с логированием и ПРАВИЛЬНЫМ импортом моделей"""
     logger.info("Initializing database...")
+    
+    # КРИТИЧНО: Импортируем ВСЕ модели перед созданием таблиц!
+    # Это гарантирует что SQLAlchemy знает о всех таблицах
+    from app.database.models.user import User
+    from app.database.models.user_settings import UserSettings
+    from app.database.models.transaction import Transaction
+    from app.database.models.task import Task
+    from app.database.models.task_execution import TaskExecution
+    from app.database.models.check import Check, CheckActivation
+    
+    logger.info(f"Found {len(Base.metadata.tables)} tables to create")
+    logger.info(f"Tables: {list(Base.metadata.tables.keys())}")
+    
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
     logger.info("Database initialized successfully")
