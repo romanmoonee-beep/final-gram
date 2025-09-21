@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.database.models.user import User
@@ -127,7 +127,7 @@ def get_profile_text(user: User) -> str:
         next_level_info = "Максимальный уровень!"
     
     registration_date = user.created_at.strftime('%d.%m.%Y')
-    account_age = (datetime.utcnow() - user.created_at).days
+    account_age = (datetime.now(timezone.utc) - user.created_at).days
     
     return f"""👤 <b>МОЙ КАБИНЕТ</b>
 
@@ -210,7 +210,7 @@ def get_task_text(task: Task, user: User | None = None) -> str:
     # Информация о времени
     time_info = ""
     if task.expires_at:
-        remaining = task.expires_at - datetime.utcnow()
+        remaining = task.expires_at - datetime.now(timezone.utc)
         if remaining.total_seconds() > 0:
             hours = int(remaining.total_seconds() // 3600)
             minutes = int((remaining.total_seconds() % 3600) // 60)

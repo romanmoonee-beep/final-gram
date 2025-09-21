@@ -51,9 +51,9 @@ class TaskService:
             user_config = author.get_level_config()
             commission_rate = user_config["commission_rate"]
             
-            total_reward = reward_amount * target_executions
-            commission = total_reward * commission_rate
-            total_budget = total_reward + commission
+            total_reward = float(reward_amount) * float(target_executions)
+            commission = float(total_reward) * float(commission_rate)
+            total_budget = float(total_reward) + float(commission)
             
             # Проверяем баланс
             if author.available_balance < total_budget:
@@ -108,8 +108,8 @@ class TaskService:
             )
             
             # Обновляем статистику автора
-            author.tasks_created += 1
-            author.daily_tasks_created += 1
+            author.tasks_created = Decimal(author.tasks_created or Decimal(0)) + Decimal(1)
+            author.daily_tasks_created = Decimal(author.daily_tasks_created or Decimal(0)) + Decimal(1)
             author.last_task_date = datetime.utcnow()
             
             await session.commit()
@@ -268,7 +268,7 @@ class TaskService:
             
             # Рассчитываем финальную награду с множителем уровня
             user_config = user.get_level_config()
-            final_reward = execution.reward_amount * user_config["task_multiplier"]
+            final_reward = float(execution.reward_amount) * float(user_config["task_multiplier"])
             
             # Обновляем выполнение
             execution.status = ExecutionStatus.COMPLETED
@@ -290,13 +290,13 @@ class TaskService:
             )
             
             # Обновляем статистику задания
-            task.completed_executions += 1
-            task.spent_budget += execution.reward_amount
-            
+            task.completed_executions = Decimal(task.completed_executions or Decimal(0)) + Decimal(1)
+            task.spent_budget = Decimal(task.spent_budget or Decimal(0)) + Decimal(execution.reward_amount)
+
             # Обновляем статистику пользователя
-            user.tasks_completed += 1
-            user.daily_tasks_completed += 1
-            
+            user.tasks_completed = Decimal(user.tasks_completed or Decimal(0)) + Decimal(1)
+            user.daily_tasks_completed = Decimal(user.daily_tasks_completed or Decimal(0)) + Decimal(1)
+
             # Проверяем завершение задания
             if task.completed_executions >= task.target_executions:
                 task.status = TaskStatus.COMPLETED
@@ -344,7 +344,7 @@ class TaskService:
         # Рассчитываем комиссию
         referrer_config = referrer.get_level_config()
         commission_rate = referrer_config["referral_rates"]["tasks"]
-        commission = reward_amount * commission_rate
+        commission = reward_amount * float(commission_rate)
         
         # Начисляем комиссию
         await self.user_service.update_balance(
@@ -357,8 +357,9 @@ class TaskService:
         )
         
         # Обновляем статистику реферера
-        referrer.referral_earnings += commission
-        
+        referrer.referral_earnings = Decimal(referrer.referral_earnings or Decimal(0)) + Decimal(commission)
+
+
         logger.info(
             "Referral commission processed",
             referrer_id=referrer.telegram_id,

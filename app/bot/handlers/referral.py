@@ -2,6 +2,8 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
 
+from datetime import timezone
+
 from app.database.models.user import User
 from app.services.user_service import UserService
 from app.bot.keyboards.referral import ReferralCallback, get_referral_keyboard, get_referral_link_keyboard
@@ -164,8 +166,12 @@ async def show_referral_list(
             callback_data=ReferralCallback(action="menu").pack()
         )
     )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    except:
+        await callback.answer("Данные обновлены ✅")
+
     await callback.answer()
 
 @router.callback_query(ReferralCallback.filter(F.action == "earnings"))
@@ -232,7 +238,7 @@ async def show_referral_stats(callback: CallbackQuery, user: User, user_service:
         # Считаем активными тех, кто был онлайн в последние 7 дней
         if ref.last_activity:
             from datetime import datetime, timedelta
-            week_ago = datetime.utcnow() - timedelta(days=7)
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
             if ref.last_activity > week_ago:
                 active_referrals += 1
     

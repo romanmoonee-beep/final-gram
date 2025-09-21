@@ -580,7 +580,7 @@ async def process_find_user(
 ├ Username: @{user.username or 'не указан'}
 ├ Имя: {user.first_name or 'не указано'}
 ├ Статус: {status_text}
-└ Уровень: {user.level.value}
+└ Уровень: {user.level}
 
 💰 <b>ФИНАНСЫ:</b>
 ├ Баланс: {user.balance:,.0f} GRAM
@@ -937,9 +937,12 @@ async def show_system_stats(callback: CallbackQuery):
             callback_data=AdminCallback(action="menu").pack()
         )
     )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
+
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup())
+        await callback.answer()
+    except:
+        await callback.answer("Данные обновлены ✅")
 
 @router.callback_query(AdminCallback.filter(F.action == "finance_stats"))
 async def show_finance_stats(callback: CallbackQuery):
@@ -1002,7 +1005,7 @@ async def show_finance_stats(callback: CallbackQuery):
             TransactionType.REFERRAL_BONUS: '👥 Рефералы'
         }
         
-        name = type_names.get(tx_type, tx_type.value)
+        name = type_names.get(tx_type)
         types_text += f"├ {name}: {count:,} шт. | {total:,.0f} GRAM\n"
     
     text = f"""💰 <b>ФИНАНСОВАЯ СТАТИСТИКА</b>

@@ -3,6 +3,8 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
+from datetime import timezone
+
 from app.database.models.user import User
 from app.database.models.task import TaskType, TaskStatus
 from app.services.task_service import TaskService
@@ -204,8 +206,8 @@ async def manage_task(
         
         if task.expires_at:
             from datetime import datetime
-            if datetime.utcnow() < task.expires_at:
-                remaining = task.expires_at - datetime.utcnow()
+            if datetime.now(timezone.utc) < task.expires_at:
+                remaining = task.expires_at - datetime.now(timezone.utc)
                 hours = int(remaining.total_seconds() // 3600)
                 text += f"\n\n⏰ <b>Истекает через:</b> {hours} ч."
             else:
@@ -611,7 +613,7 @@ async def process_task_reward(message: Message, state: FSMContext, user: User):
         return
     
     # Сохраняем награду и переходим к количеству
-    await state.update_data(reward_amount=reward)
+    await state.update_data(reward_amount=float(reward))
     await state.set_state(TaskCreationStates.entering_quantity)
     
     data = await state.get_data()
@@ -656,7 +658,7 @@ async def process_task_quantity(message: Message, state: FSMContext, user: User,
     commission_rate = user_config["commission_rate"]
     
     total_reward = reward * quantity
-    commission = total_reward * commission_rate
+    commission = float(total_reward) * float(commission_rate)
     total_budget = total_reward + commission
     
     # Проверяем баланс
@@ -691,7 +693,7 @@ async def process_task_quantity(message: Message, state: FSMContext, user: User,
 💳 <b>Ваш баланс:</b>
 ├ Текущий: {user.balance:,.0f} GRAM
 ├ Доступный: {user.available_balance:,.0f} GRAM
-└ <b>Останется: {user.available_balance - total_budget:,.0f} GRAM</b>
+└ <b>Останется: {float(user.available_balance) - float(total_budget):,.0f} GRAM</b>
 
 ⚡ <b>Прогноз:</b> Задание будет выполнено в течение 1-24 часов"""
     

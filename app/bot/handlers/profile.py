@@ -234,7 +234,7 @@ async def show_transactions(callback: CallbackQuery, user: User, transaction_ser
                 "deposit_stars": "⭐",
                 "task_creation": "📢"
             }
-            icon = type_icons.get(tx.type.value, "💰")
+            icon = type_icons.get(tx.type, "💰")
             
             text += f"\n{icon} {amount_text} GRAM | {date}"
     

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -380,7 +380,7 @@ class UserService:
                 'total_spending': float(abs(stats.total_spending or 0)),
                 'referrals_count': user.total_referrals,
                 'premium_referrals_count': user.premium_referrals,
-                'account_age_days': (datetime.utcnow() - user.created_at).days,
+                'account_age_days': (datetime.now(timezone.utc) - user.created_at).days,
                 'level_config': user.get_level_config()
             }
     

@@ -5,6 +5,8 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
 
+from datetime import timezone
+
 from app.database.models.user import User
 from app.database.models.task import TaskType
 from app.services.task_service import TaskService
@@ -17,7 +19,7 @@ router = Router()
 @router.message(Command("earn"))
 async def cmd_earn(message: Message, user: User):
     """Команда /earn"""
-    text = """💰 <b>ЗАРАБОТАТЬ GRAM</b>
+    text = f"""💰 <b>ЗАРАБОТАТЬ GRAM</b>
 
 Выберите тип заданий для выполнения:
 
@@ -41,7 +43,7 @@ async def cmd_earn(message: Message, user: User):
 @router.callback_query(MainMenuCallback.filter(F.action == "earn"))
 async def show_earn_from_menu(callback: CallbackQuery, user: User):
     """Показать заработок из главного меню"""
-    text = """💰 <b>ЗАРАБОТАТЬ GRAM</b>
+    text = f"""💰 <b>ЗАРАБОТАТЬ GRAM</b>
 
 Выберите тип заданий для выполнения:
 
@@ -66,7 +68,7 @@ async def show_earn_from_menu(callback: CallbackQuery, user: User):
 @router.callback_query(EarnCallback.filter(F.action == "menu"))
 async def show_earn_menu(callback: CallbackQuery, user: User):
     """Показать меню заработка"""
-    text = """💰 <b>ЗАРАБОТАТЬ GRAM</b>
+    text = f"""💰 <b>ЗАРАБОТАТЬ GRAM</b>
 
 Выберите тип заданий для выполнения:
 
@@ -352,7 +354,7 @@ async def show_task_info(
         
         if task.expires_at:
             from datetime import datetime
-            remaining = task.expires_at - datetime.utcnow()
+            remaining = task.expires_at - datetime.now(timezone.utc)
             if remaining.total_seconds() > 0:
                 hours = int(remaining.total_seconds() // 3600)
                 minutes = int((remaining.total_seconds() % 3600) // 60)

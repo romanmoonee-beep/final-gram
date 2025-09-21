@@ -173,7 +173,8 @@ class User(Base):
                 "referral_bonus": Decimal("1000"),
                 "task_multiplier": Decimal("1.0"),
                 "max_task_reward": Decimal("500"),
-                "features": ["basic_tasks", "referrals"]
+                "features": ["basic_tasks", "referrals"],
+                "daily_task_limit": 10
             },
             UserLevel.SILVER: {
                 "name": "🥈 Silver",
@@ -184,7 +185,8 @@ class User(Base):
                 "referral_bonus": Decimal("1500"),
                 "task_multiplier": Decimal("1.2"),
                 "max_task_reward": Decimal("1000"),
-                "features": ["basic_tasks", "referrals", "priority_support"]
+                "features": ["basic_tasks", "referrals", "priority_support"],
+                "daily_task_limit": 20
             },
             UserLevel.GOLD: {
                 "name": "🥇 Gold",
@@ -195,7 +197,8 @@ class User(Base):
                 "referral_bonus": Decimal("2000"),
                 "task_multiplier": Decimal("1.35"),
                 "max_task_reward": Decimal("2000"),
-                "features": ["basic_tasks", "referrals", "priority_support", "exclusive_tasks"]
+                "features": ["basic_tasks", "referrals", "priority_support", "exclusive_tasks"],
+                "daily_task_limit": 30
             },
             UserLevel.PREMIUM: {
                 "name": "💎 Premium",
@@ -206,7 +209,8 @@ class User(Base):
                 "referral_bonus": Decimal("3000"),
                 "task_multiplier": Decimal("1.5"),
                 "max_task_reward": Decimal("5000"),
-                "features": ["all"]
+                "features": ["all"],
+                "daily_task_limit": 100
             }
         }
         return configs.get(self.level, configs[UserLevel.BRONZE])

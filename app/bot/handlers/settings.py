@@ -6,8 +6,14 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.database.models.user import User
-from app.services.settings_service import SettingsService
 from app.bot.keyboards.main_menu import MainMenuCallback, get_main_menu_keyboard
+from app.services.settings_service import SettingsService
+
+from aiogram import F
+
+from app.services.settings_service import SettingsService
+from aiogram import Router, types
+from aiogram.filters import Command
 
 router = Router()
 
@@ -239,10 +245,11 @@ async def cmd_settings(message: Message, user: User, settings_service: SettingsS
     await message.answer(text, reply_markup=keyboard)
 
 @router.callback_query(MainMenuCallback.filter(F.action == "settings"))
-async def show_settings_menu(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_settings_menu(callback: CallbackQuery, user: User):
     """Показать меню настроек"""
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
-    
+
     text = f"""⚙️ <b>НАСТРОЙКИ</b>
 
 Настройте бота под свои предпочтения:
@@ -266,9 +273,9 @@ async def show_settings_menu(callback: CallbackQuery, user: User, settings_servi
     await callback.answer()
 
 @router.callback_query(SettingsCallback.filter(F.action == "menu"))
-async def show_settings_menu_callback(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_settings_menu_callback(callback: CallbackQuery, user: User):
     """Показать меню настроек через callback"""
-    await show_settings_menu(callback, user, settings_service)
+    await show_settings_menu(callback, user)
 
 @router.callback_query(SettingsCallback.filter(F.action == "notifications"))
 async def show_notifications_settings(callback: CallbackQuery, user: User, settings_service: SettingsService):
