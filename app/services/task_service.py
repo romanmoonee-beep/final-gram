@@ -88,7 +88,7 @@ class TaskService:
             # Замораживаем средства
             success = await self.user_service.freeze_balance(
                 author_id,
-                total_budget,
+                Decimal(total_budget),
                 f"Создание задания #{task.id}"
             )
             
@@ -99,7 +99,7 @@ class TaskService:
             # Создаем транзакцию списания
             await self.transaction_service.create_transaction(
                 user_id=author_id,
-                amount=-total_budget,
+                amount=Decimal(-total_budget),
                 transaction_type=TransactionType.TASK_CREATION,
                 description=f"Создание задания: {title}",
                 reference_id=str(task.id),
@@ -282,7 +282,7 @@ class TaskService:
             # Начисляем награду пользователю
             await self.user_service.update_balance(
                 execution.user_id,
-                final_reward,
+                Decimal(final_reward),
                 TransactionType.TASK_REWARD,
                 f"Награда за выполнение задания: {task.title}",
                 str(task.id),
@@ -312,7 +312,7 @@ class TaskService:
                     )
             
             # Обрабатываем реферальные бонусы
-            await self._process_referral_commission(user, final_reward, session)
+            await self._process_referral_commission(user, Decimal(final_reward), session)
             
             await session.commit()
             
