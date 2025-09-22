@@ -109,7 +109,9 @@ class AdminStates(StatesGroup):
     # =============================================================================
     # НАСТРОЙКИ БОТА
     # =============================================================================
-    
+
+    entering_channel_url = State()
+
     # Настройки GRAM
     editing_gram_settings = State()
     entering_min_task_reward = State()

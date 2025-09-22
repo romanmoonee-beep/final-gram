@@ -120,17 +120,17 @@ class UserService:
         bonus = referrer_config["referral_bonus"]
         
         # Начисляем бонус
-        referrer.balance += bonus
-        referrer.referral_earnings += bonus
+        referrer.balance += float(bonus)
+        referrer.referral_earnings += float(bonus)
         
         # Создаем транзакцию
         transaction = Transaction(
             user_id=referrer.telegram_id,
             type=TransactionType.REFERRAL_BONUS,
             status=TransactionStatus.COMPLETED,
-            amount=bonus,
+            amount=Decimal(bonus),
             description=f"Бонус за реферала @{new_user.username or new_user.telegram_id}",
-            balance_before=referrer.balance - bonus,
+            balance_before=Decimal(referrer.balance - float(bonus)),
             balance_after=referrer.balance
         )
         
@@ -185,9 +185,9 @@ class UserService:
             # Обновляем статистику
             if amount > 0:
                 if transaction_type in [TransactionType.TASK_REWARD, TransactionType.REFERRAL_BONUS]:
-                    user.total_earned += amount
+                    user.total_earned += float(amount)
                 elif transaction_type == TransactionType.DEPOSIT_STARS:
-                    user.total_deposited += amount
+                    user.total_deposited += float(amount)
             else:
                 user.total_spent += abs(amount)
             
@@ -208,7 +208,7 @@ class UserService:
                 user_id=telegram_id,
                 type=transaction_type,
                 status=TransactionStatus.COMPLETED,
-                amount=amount,
+                amount=Decimal(amount),
                 description=description,
                 reference_id=reference_id,
                 reference_type=reference_type,
@@ -256,14 +256,14 @@ class UserService:
                 return False
             
             # Замораживаем средства
-            user.frozen_balance += amount
+            user.frozen_balance += float(amount)
             
             # Создаем транзакцию
             transaction = Transaction(
                 user_id=telegram_id,
                 type=TransactionType.BALANCE_FREEZE,
                 status=TransactionStatus.COMPLETED,
-                amount=amount,
+                amount=Decimal(amount),
                 description=description or "Заморозка средств",
                 balance_before=user.balance,
                 balance_after=user.balance

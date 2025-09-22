@@ -93,6 +93,49 @@ async def open_advertise_section(callback: CallbackQuery):
     )
     await callback.answer()
 
+
+@router.callback_query(MainMenuCallback.filter(F.action == "checks"))
+async def open_checks_section(callback: CallbackQuery, user: User):
+    """Открыть систему чеков"""
+    from app.bot.keyboards.checks import get_checks_menu_keyboard
+
+    text = f"""💳 <b>СИСТЕМА ЧЕКОВ</b>
+
+Отправляйте GRAM монеты через специальные чеки прямо в сообщениях Telegram.
+
+💰 Баланс: {user.balance:,.0f} GRAM
+
+🎯 <b>ВОЗМОЖНОСТИ ЧЕКОВ:</b>
+- Отправка в любой чат/канал
+- Добавление комментариев и картинок
+- Установка пароля для защиты
+- Условие подписки для получения
+- Уведомления о создании и активации"""
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_checks_menu_keyboard()
+    )
+    await callback.answer()
+
+@router.callback_query(MainMenuCallback.filter(F.action == "subscription_check"))
+async def open_subscription_check(callback: CallbackQuery):
+    """Открыть проверку подписок"""
+    await callback.answer("✅ Раздел в разработке. Скоро будет доступен!", show_alert=True)
+
+
+@router.callback_query(MainMenuCallback.filter(F.action == "settings"))
+async def open_settings_section(callback: CallbackQuery, user: User):
+    """Открыть настройки"""
+    from app.services.settings_service import SettingsService
+    # from app.bot.keyboards.admin import get_settings_keyboard
+
+    settings_service = SettingsService()
+    # settings = await settings_service.get_user_settings(user.telegram_id)
+    # Переход к обработчику настроек
+    from app.bot.handlers.settings import show_settings_menu
+    await show_settings_menu(callback, user)
+
 @router.callback_query(MainMenuCallback.filter(F.action == "referral"))
 async def open_referral_section(callback: CallbackQuery, user: User):
     """Открыть реферальную систему"""

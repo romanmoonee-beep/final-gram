@@ -7,7 +7,6 @@ from decimal import Decimal
 
 from app.database.models.user import User
 from app.bot.keyboards.main_menu import MainMenuCallback, get_main_menu_keyboard
-from app.services.settings_service import SettingsService
 
 from aiogram import F
 
@@ -25,7 +24,7 @@ class SettingsCallback(CallbackData, prefix="settings"):
     setting: str = "none"
     value: str = "none"
 
-async def get_settings_keyboard(user_id: int, settings_service: SettingsService):
+async def get_settings_keyboard(user_id: int):
     """Клавиатура настроек"""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -78,11 +77,12 @@ async def get_settings_keyboard(user_id: int, settings_service: SettingsService)
     
     return builder.as_markup()
 
-async def get_notifications_keyboard(user_id: int, settings_service: SettingsService):
+async def get_notifications_keyboard(user_id: int):
     """Клавиатура настроек уведомлений"""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
-    
+
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user_id)
     
     builder = InlineKeyboardBuilder()
@@ -148,11 +148,13 @@ async def get_notifications_keyboard(user_id: int, settings_service: SettingsSer
     
     return builder.as_markup()
 
-async def get_privacy_keyboard(user_id: int, settings_service: SettingsService):
+async def get_privacy_keyboard(user_id: int):
     """Клавиатура настроек приватности"""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
-    
+
+    settings_service = SettingsService()
+
     settings = await settings_service.get_user_settings(user_id)
     
     builder = InlineKeyboardBuilder()
@@ -219,8 +221,9 @@ async def get_privacy_keyboard(user_id: int, settings_service: SettingsService):
     return builder.as_markup()
 
 @router.message(Command("settings"))
-async def cmd_settings(message: Message, user: User, settings_service: SettingsService):
+async def cmd_settings(message: Message, user: User):
     """Команда /settings"""
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
     
     text = f"""⚙️ <b>НАСТРОЙКИ</b>
@@ -240,7 +243,7 @@ async def cmd_settings(message: Message, user: User, settings_service: SettingsS
 
 💡 <i>Измените настройки для удобного использования бота</i>"""
     
-    keyboard = await get_settings_keyboard(user.telegram_id, settings_service)
+    keyboard = await get_settings_keyboard(user.telegram_id)
     
     await message.answer(text, reply_markup=keyboard)
 
@@ -267,7 +270,7 @@ async def show_settings_menu(callback: CallbackQuery, user: User):
 
 💡 <i>Измените настройки для удобного использования бота</i>"""
     
-    keyboard = await get_settings_keyboard(user.telegram_id, settings_service)
+    keyboard = await get_settings_keyboard(user.telegram_id)
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -278,8 +281,9 @@ async def show_settings_menu_callback(callback: CallbackQuery, user: User):
     await show_settings_menu(callback, user)
 
 @router.callback_query(SettingsCallback.filter(F.action == "notifications"))
-async def show_notifications_settings(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_notifications_settings(callback: CallbackQuery, user: User):
     """Настройки уведомлений"""
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
     
     text = f"""🔔 <b>НАСТРОЙКИ УВЕДОМЛЕНИЙ</b>
@@ -308,17 +312,18 @@ async def show_notifications_settings(callback: CallbackQuery, user: User, setti
 
 💡 <i>Нажмите на настройку чтобы изменить</i>"""
     
-    keyboard = await get_notifications_keyboard(user.telegram_id, settings_service)
+    keyboard = await get_notifications_keyboard(user.telegram_id)
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 @router.callback_query(SettingsCallback.filter(F.action == "language"))
-async def show_language_settings(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_language_settings(callback: CallbackQuery, user: User):
     """Настройки языка"""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
-    
+
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
     
     builder = InlineKeyboardBuilder()
@@ -362,8 +367,9 @@ async def show_language_settings(callback: CallbackQuery, user: User, settings_s
     await callback.answer()
 
 @router.callback_query(SettingsCallback.filter(F.action == "privacy"))
-async def show_privacy_settings(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_privacy_settings(callback: CallbackQuery, user: User):
     """Настройки приватности"""
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
     
     text = f"""🔒 <b>НАСТРОЙКИ ПРИВАТНОСТИ</b>
@@ -388,17 +394,18 @@ async def show_privacy_settings(callback: CallbackQuery, user: User, settings_se
 
 💡 <i>Эти настройки влияют на отображение в публичных разделах</i>"""
     
-    keyboard = await get_privacy_keyboard(user.telegram_id, settings_service)
+    keyboard = await get_privacy_keyboard(user.telegram_id)
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 @router.callback_query(SettingsCallback.filter(F.action == "auto_withdraw"))
-async def show_auto_withdraw_settings(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_auto_withdraw_settings(callback: CallbackQuery, user: User):
     """Настройки автовывода"""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
-    
+
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
     
     builder = InlineKeyboardBuilder()
@@ -474,11 +481,12 @@ async def show_auto_withdraw_settings(callback: CallbackQuery, user: User, setti
     await callback.answer()
 
 @router.callback_query(SettingsCallback.filter(F.action == "security"))
-async def show_security_settings(callback: CallbackQuery, user: User, settings_service: SettingsService):
+async def show_security_settings(callback: CallbackQuery, user: User):
     """Настройки безопасности"""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
-    
+
+    settings_service = SettingsService()
     settings = await settings_service.get_user_settings(user.telegram_id)
     
     builder = InlineKeyboardBuilder()
@@ -562,10 +570,10 @@ async def show_security_settings(callback: CallbackQuery, user: User, settings_s
 async def toggle_notification_setting(
     callback: CallbackQuery, 
     callback_data: SettingsCallback,
-    user: User,
-    settings_service: SettingsService
+    user: User
 ):
     """Переключить настройку уведомлений"""
+    settings_service = SettingsService()
     setting = callback_data.setting
     enabled = callback_data.value == "on"
     
@@ -585,7 +593,7 @@ async def toggle_notification_setting(
         action_text = "включены" if enabled else "отключены"
         
         await callback.answer(f"✅ {setting_name.title()} {action_text}")
-        await show_notifications_settings(callback, user, settings_service)
+        await show_notifications_settings(callback, user)
     else:
         await callback.answer("❌ Ошибка при сохранении настройки", show_alert=True)
 
@@ -594,12 +602,12 @@ async def toggle_privacy_setting(
     callback: CallbackQuery,
     callback_data: SettingsCallback, 
     user: User,
-    settings_service: SettingsService
 ):
     """Переключить настройку приватности"""
     setting = callback_data.setting
     enabled = callback_data.value == "on"
-    
+
+    settings_service = SettingsService()
     success = await settings_service.update_privacy_setting(
         user.telegram_id, setting, enabled
     )
@@ -616,7 +624,7 @@ async def toggle_privacy_setting(
         action_text = "включено" if enabled else "отключено"
         
         await callback.answer(f"✅ {setting_name.title()} {action_text}")
-        await show_privacy_settings(callback, user, settings_service)
+        await show_privacy_settings(callback, user)
     else:
         await callback.answer("❌ Ошибка при сохранении настройки", show_alert=True)
 
@@ -624,8 +632,7 @@ async def toggle_privacy_setting(
 async def set_language(
     callback: CallbackQuery,
     callback_data: SettingsCallback,
-    user: User,
-    settings_service: SettingsService
+    user: User
 ):
     """Установить язык"""
     language = callback_data.value
@@ -633,7 +640,8 @@ async def set_language(
     if language == "en":
         await callback.answer("🇺🇸 English будет доступен в будущих обновлениях", show_alert=True)
         return
-    
+
+    settings_service = SettingsService()
     success = await settings_service.set_language(user.telegram_id, language)
     
     if success:
@@ -646,10 +654,10 @@ async def set_language(
 async def toggle_two_factor(
     callback: CallbackQuery,
     callback_data: SettingsCallback,
-    user: User,
-    settings_service: SettingsService
+    user: User
 ):
     """Переключить двухфакторную аутентификацию"""
+    settings_service = SettingsService()
     enabled = callback_data.value == "on"
     
     if enabled:
@@ -666,53 +674,77 @@ async def toggle_two_factor(
     else:
         await callback.answer("❌ Ошибка при изменении настройки", show_alert=True)
 
+
 @router.callback_query(SettingsCallback.filter(F.action == "export"))
 async def export_settings(
-    callback: CallbackQuery,
-    user: User,
-    settings_service: SettingsService
+        callback: CallbackQuery,
+        user: User
 ):
     """Экспорт настроек"""
+    settings_service = SettingsService()
     settings_data = await settings_service.export_user_settings(user.telegram_id)
-    
+
+    # Безопасное извлечение данных с значениями по умолчанию
+    language = settings_data.get('localization', {}).get('language')
+    timezone = settings_data.get('localization', {}).get('timezone', 'Не указан')
+
+    auto_withdraw = settings_data.get('auto_withdraw', {})
+    withdraw_method = auto_withdraw.get('method', 'Не указан')
+    withdraw_address = auto_withdraw.get('address')
+
+    # Форматирование адреса с проверкой на None
+    if withdraw_address and len(withdraw_address) > 20:
+        formatted_address = withdraw_address[:20] + '...'
+    else:
+        formatted_address = withdraw_address or 'Не указан'
+
+    # Форматирование порога с проверкой на None
+    threshold = auto_withdraw.get('threshold', 0)
+    formatted_threshold = f"{threshold:,.0f}" if threshold is not None else "0"
+
+    # Форматирование языка с проверкой на None
+    formatted_language = language.upper() if language else 'НЕ УКАЗАН'
+
     # Формируем читаемый текст настроек
-    export_text = f"""📥 <b>ЭКСПОРТ НАСТРОЕК</b>
+    export_text = f"""
+    📥 <b>ЭКСПОРТ НАСТРОЕК</b>
 
-👤 <b>Пользователь:</b> {user.telegram_id}
-📅 <b>Дата экспорта:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}
+    👤 <b>Пользователь:</b> {user.telegram_id}
+    📅 <b>Дата экспорта:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}
 
-🔔 <b>УВЕДОМЛЕНИЯ:</b>
-├ Задания: {'✅' if settings_data['notifications']['tasks'] else '❌'}
-├ Платежи: {'✅' if settings_data['notifications']['payments'] else '❌'}
-├ Рефералы: {'✅' if settings_data['notifications']['referrals'] else '❌'}
-└ Админ: {'✅' if settings_data['notifications']['admin'] else '❌'}
+    🔔 <b>УВЕДОМЛЕНИЯ:</b>
+    ├ Задания: {'✅' if settings_data.get('notifications', {}).get('tasks') else '❌'}
+    ├ Платежи: {'✅' if settings_data.get('notifications', {}).get('payments') else '❌'}
+    ├ Рефералы: {'✅' if settings_data.get('notifications', {}).get('referrals') else '❌'}
+    └ Админ: {'✅' if settings_data.get('notifications', {}).get('admin') else '❌'}
 
-🔒 <b>ПРИВАТНОСТЬ:</b>
-├ Скрыть профиль: {'✅' if settings_data['privacy']['hide_profile'] else '❌'}
-├ Скрыть статистику: {'✅' if settings_data['privacy']['hide_stats'] else '❌'}
-├ Скрыть из рейтинга: {'✅' if settings_data['privacy']['hide_from_leaderboard'] else '❌'}
-└ Реферальные упоминания: {'✅' if settings_data['privacy']['allow_referral_mentions'] else '❌'}
+    🔒 <b>ПРИВАТНОСТЬ:</b>
+    ├ Скрыть профиль: {'✅' if settings_data.get('privacy', {}).get('hide_profile') else '❌'}
+    ├ Скрыть статистику: {'✅' if settings_data.get('privacy', {}).get('hide_stats') else '❌'}
+    ├ Скрыть из рейтинга: {'✅' if settings_data.get('privacy', {}).get('hide_from_leaderboard') else '❌'}
+    └ Реферальные упоминания: {'✅' if settings_data.get('privacy', {}).get('allow_referral_mentions') else '❌'}
 
-🌐 <b>ЛОКАЛИЗАЦИЯ:</b>
-├ Язык: {settings_data['localization']['language'].upper()}
-└ Часовой пояс: {settings_data['localization']['timezone']}
+    🌐 <b>ЛОКАЛИЗАЦИЯ:</b>
+    ├ Язык: {formatted_language}
+    └ Часовой пояс: {timezone}
 
-💸 <b>АВТОВЫВОД:</b>
-├ Включен: {'✅' if settings_data['auto_withdraw']['enabled'] else '❌'}
-├ Порог: {settings_data['auto_withdraw']['threshold']:,.0f} GRAM
-├ Метод: {settings_data['auto_withdraw']['method'] or 'Не указан'}
-└ Адрес: {settings_data['auto_withdraw']['address'][:20] + '...' if settings_data['auto_withdraw']['address'] and len(settings_data['auto_withdraw']['address']) > 20 else settings_data['auto_withdraw']['address'] or 'Не указан'}
+    💸 <b>АВТОВЫВОД:</b>
+    ├ Включен: {'✅' if auto_withdraw.get('enabled') else '❌'}
+    ├ Порог: {formatted_threshold} GRAM
+    ├ Метод: {withdraw_method}
+    └ Адрес: {formatted_address}
 
-🔐 <b>БЕЗОПАСНОСТЬ:</b>
-├ 2FA: {'✅' if settings_data['security']['two_factor_enabled'] else '❌'}
-├ Уведомления о входах: {'✅' if settings_data['security']['login_notifications'] else '❌'}
-└ API доступ: {'✅' if settings_data['security']['api_access_enabled'] else '❌'}
+    🔐 <b>БЕЗОПАСНОСТЬ:</b>
+    ├ 2FA: {'✅' if settings_data.get('security', {}).get('two_factor_enabled') else '❌'}
+    ├ Уведомления о входах: {'✅' if settings_data.get('security', {}).get('login_notifications') else '❌'}
+    └ API доступ: {'✅' if settings_data.get('security', {}).get('api_access_enabled') else '❌'}
 
-💾 <i>Сохраните этот текст для восстановления настроек</i>"""
-    
+    💾 <i>Сохраните этот текст для восстановления настроек</i>
+    """
+
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
-    
+
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
@@ -720,6 +752,6 @@ async def export_settings(
             callback_data=SettingsCallback(action="menu").pack()
         )
     )
-    
-    await callback.message.edit_text(export_text, reply_markup=builder.as_markup())
+
+    await callback.message.edit_text(text=export_text, reply_markup=builder.as_markup())
     await callback.answer("📥 Настройки экспортированы")

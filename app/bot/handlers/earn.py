@@ -5,6 +5,8 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
 
+from sqlalchemy import select
+
 from datetime import timezone
 
 from app.database.models.user import User
@@ -226,62 +228,58 @@ async def execute_task(
 
 @router.callback_query(EarnCallback.filter(F.action == "check"))
 async def check_task_execution(
-    callback: CallbackQuery,
-    callback_data: EarnCallback,
-    user: User,
-    task_service: TaskService
+        callback: CallbackQuery,
+        callback_data: EarnCallback,
+        user: User,
+        task_service: TaskService
 ):
     """Проверить выполнение задания"""
     try:
         task = await task_service.get_task_by_id(callback_data.task_id)
-        
+
         if not task:
             await callback.answer(get_error_message("task_not_found"), show_alert=True)
             return
-        
-        # Получаем текущее выполнение пользователя
+
+        # Получаем ТЕКУЩЕЕ выполнение пользователя в статусе PENDING
         executions = await task_service.get_user_executions(user.telegram_id, limit=100)
-        
+
         execution = None
         for ex in executions:
             if ex.task_id == task.id and ex.status.value == "pending":
                 execution = ex
                 break
-        
+
         if not execution:
-            await callback.answer("❌ Активное выполнение не найдено", show_alert=True)
-            return
-        
+            # Если нет активного выполнения, создаем новое
+            execution = await task_service.execute_task(task.id, user.telegram_id)
+            if not execution:
+                await callback.answer("❌ Не удалось начать выполнение задания", show_alert=True)
+                return
+
         # Для автопроверяемых заданий выполняем проверку
         if task.auto_check:
-            # В реальном приложении здесь должна быть проверка через Telegram API
-            # Пока что автоматически засчитываем для демонстрации
             success = await task_service.complete_task_execution(
                 execution.id,
                 auto_checked=True,
                 reviewer_id=None,
                 review_comment="Автоматическая проверка"
             )
-            
+
             if success:
                 user_config = user.get_level_config()
                 final_reward = task.reward_amount * user_config['task_multiplier']
-                
+
                 success_text = f"""✅ <b>ЗАДАНИЕ ВЫПОЛНЕНО!</b>
 
 🎯 <b>Задание:</b> {task.title}
 💰 <b>Награда:</b> +{final_reward:,.0f} GRAM зачислено
 ⚡ <b>Множитель уровня:</b> x{user_config['task_multiplier']}
 
-🎉 Отлично! Продолжайте выполнять задания для увеличения заработка!
+🎉 Отлично! Продолжайте выполнять задания для увеличения заработка!"""
 
-💡 <b>Советы:</b>
-• Повышайте уровень для большего множителя
-• Выполняйте задания регулярно
-• Приглашайте рефералов для дополнительного дохода"""
-                
                 from app.bot.keyboards.main_menu import get_main_menu_keyboard
-                
+
                 await callback.message.edit_text(
                     success_text,
                     reply_markup=get_main_menu_keyboard(user)
@@ -292,7 +290,7 @@ async def check_task_execution(
         else:
             # Для заданий с ручной проверкой
             await callback.answer("⏳ Задание отправлено на модерацию. Результат в течение 24 часов", show_alert=True)
-            
+
     except Exception as e:
         logger.error("Error checking task execution", error=str(e), task_id=callback_data.task_id)
         await callback.answer("❌ Ошибка при проверке задания", show_alert=True)
@@ -397,30 +395,42 @@ async def show_task_info(
 
 @router.callback_query(EarnCallback.filter(F.action == "cancel_execution"))
 async def cancel_execution(
-    callback: CallbackQuery,
-    callback_data: EarnCallback,
-    user: User,
-    task_service: TaskService
+        callback: CallbackQuery,
+        callback_data: EarnCallback,
+        user: User,
+        task_service: TaskService
 ):
     """Отменить выполнение задания"""
     try:
         # Находим активное выполнение
         executions = await task_service.get_user_executions(user.telegram_id, limit=100)
-        
+
         execution = None
         for ex in executions:
             if ex.task_id == callback_data.task_id and ex.status.value == "pending":
                 execution = ex
                 break
-        
+
         if execution:
-            # В реальном приложении здесь будет отмена выполнения
-            # Пока что просто возвращаемся к заданию
+            from app.database.database import get_session
+            from app.database.models.task_execution import TaskExecution
+            # Отменяем выполнение
+            async with get_session() as session:
+                from app.database.models.task_execution import ExecutionStatus
+                result = await session.execute(
+                    select(TaskExecution).where(TaskExecution.id == execution.id)
+                )
+                exec_to_cancel = result.scalar_one_or_none()
+                if exec_to_cancel:
+                    exec_to_cancel.status = ExecutionStatus.CANCELLED
+                    await session.commit()
+
+            # Возвращаемся к заданию
             await view_task(callback, callback_data, user, task_service)
             await callback.answer("❌ Выполнение отменено")
         else:
             await callback.answer("❌ Активное выполнение не найдено", show_alert=True)
-            
+
     except Exception as e:
         logger.error("Error canceling execution", error=str(e), task_id=callback_data.task_id)
         await callback.answer("❌ Ошибка при отмене выполнения", show_alert=True)

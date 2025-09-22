@@ -152,7 +152,7 @@ async def process_check_amount(message: Message, state: FSMContext, user: User):
         return
     
     # Сохраняем сумму
-    await state.update_data(amount=amount)
+    await state.update_data(amount=float(amount))
     await state.set_state(CheckCreationStates.entering_activations)
     
     data = await state.get_data()
@@ -272,10 +272,12 @@ async def process_check_comment(message: Message, state: FSMContext):
     await message.answer(text)
 
 @router.message(CheckCreationStates.entering_password)
-async def process_check_password(message: Message, state: FSMContext, user: User, check_service: CheckService):
+async def process_check_password(message: Message, state: FSMContext, user: User):
     """Обработка пароля и создание чека"""
     password = message.text.strip()
-    
+
+    check_service = CheckService()
+
     if password == "-":
         password = None
     elif len(password) > 50:
@@ -338,10 +340,11 @@ async def process_check_password(message: Message, state: FSMContext, user: User
 async def show_my_checks(
     callback: CallbackQuery,
     callback_data: CheckCallback,
-    user: User,
-    check_service: CheckService
+    user: User
 ):
     """Показать мои чеки"""
+    check_service = CheckService()
+
     page = callback_data.page
     limit = 10
     offset = (page - 1) * limit
@@ -380,10 +383,11 @@ async def show_my_checks(
 @router.callback_query(CheckCallback.filter(F.action == "manage"))
 async def manage_check(
     callback: CallbackQuery,
-    callback_data: CheckCallback,
-    check_service: CheckService
+    callback_data: CheckCallback
 ):
     """Управление чеком"""
+    check_service = CheckService()
+
     check_id = callback_data.check_id
     
     # Получаем аналитику чека
@@ -438,10 +442,10 @@ async def manage_check(
 async def cancel_check(
     callback: CallbackQuery,
     callback_data: CheckCallback,
-    user: User,
-    check_service: CheckService
+    user: User
 ):
     """Отменить чек"""
+    check_service = CheckService()
     check_id = callback_data.check_id
     
     success = await check_service.cancel_check(check_id, user.telegram_id)
@@ -463,10 +467,10 @@ async def cancel_check(
 @router.callback_query(CheckCallback.filter(F.action == "analytics"))
 async def show_check_analytics(
     callback: CallbackQuery,
-    callback_data: CheckCallback,
-    check_service: CheckService
+    callback_data: CheckCallback
 ):
     """Показать аналитику чека"""
+    check_service = CheckService()
     analytics = await check_service.get_check_analytics(callback_data.check_id)
     
     if not analytics:
@@ -513,10 +517,10 @@ async def show_check_analytics(
 async def show_activated_checks(
     callback: CallbackQuery,
     callback_data: CheckCallback,
-    user: User,
-    check_service: CheckService
+    user: User
 ):
     """Показать активированные чеки"""
+    check_service = CheckService()
     page = callback_data.page
     limit = 10
     offset = (page - 1) * limit
@@ -563,10 +567,10 @@ async def show_activated_checks(
 @router.callback_query(CheckCallback.filter(F.action == "copy_code"))
 async def copy_check_code(
     callback: CallbackQuery,
-    callback_data: CheckCallback,
-    check_service: CheckService
+    callback_data: CheckCallback
 ):
     """Скопировать код чека"""
+    check_service = CheckService()
     check_id = callback_data.check_id
     
     analytics = await check_service.get_check_analytics(check_id)
@@ -627,8 +631,9 @@ async def show_activate_form(callback: CallbackQuery):
     await callback.answer()
 
 @router.message(Command("check"))
-async def cmd_activate_check(message: Message, user: User, check_service: CheckService):
+async def cmd_activate_check(message: Message, user: User):
     """Команда /check для активации"""
+    check_service = CheckService()
     args = message.text.split()
     
     if len(args) < 2:
@@ -657,8 +662,9 @@ async def cmd_activate_check(message: Message, user: User, check_service: CheckS
 
 # Обработчик текстовых сообщений для активации чеков по коду
 @router.message(F.text.regexp(r'^[A-Z0-9]{8}$'))
-async def activate_check_by_text(message: Message, user: User, check_service: CheckService):
+async def activate_check_by_text(message: Message, user: User):
     """Активация чека по тексту (код из 8 символов)"""
+    check_service = CheckService()
     check_code = message.text.upper()
     
     success, message_text, amount = await check_service.activate_check(
@@ -679,8 +685,9 @@ async def activate_check_by_text(message: Message, user: User, check_service: Ch
 
 # Обработчик для кода с паролем
 @router.message(F.text.regexp(r'^[A-Z0-9]{8}\s+\S+$'))
-async def activate_check_with_password(message: Message, user: User, check_service: CheckService):
+async def activate_check_with_password(message: Message, user: User):
     """Активация чека с паролем"""
+    check_service = CheckService()
     parts = message.text.split()
     check_code = parts[0].upper()
     password = parts[1]

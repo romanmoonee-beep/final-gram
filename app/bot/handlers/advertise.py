@@ -667,7 +667,7 @@ async def process_task_quantity(message: Message, state: FSMContext, user: User,
             f"❌ Недостаточно средств\n\n"
             f"💰 Требуется: {total_budget:,.0f} GRAM\n"
             f"💳 Доступно: {user.available_balance:,.0f} GRAM\n"
-            f"📊 Не хватает: {total_budget - user.available_balance:,.0f} GRAM\n\n"
+            f"📊 Не хватает: {float(total_budget) - float(user.available_balance):,.0f} GRAM\n\n"
             f"Пополните баланс или уменьшите параметры задания."
         )
         return

@@ -1,3 +1,7 @@
+import asyncio
+import logging
+import structlog
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
@@ -29,6 +33,9 @@ from app.bot.states.admin_states import AdminStates
 from app.bot.filters.admin import AdminFilter
 from app.config.settings import settings
 from app.database.database import get_session
+from app.database.models.required_subscription import RequiredSubscription
+
+logger = structlog.get_logger(__name__)
 
 router = Router()
 router.message.filter(AdminFilter())  # Только для админов
@@ -1051,6 +1058,1092 @@ async def show_finance_stats(callback: CallbackQuery):
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "top_users"))
+async def show_top_users(callback: CallbackQuery):
+    """Показать ТОП пользователей"""
+    async with get_session() as session:
+        # ТОП по балансу
+        top_balance = await session.execute(
+            select(User.telegram_id, User.username, User.balance)
+            .order_by(User.balance.desc())
+            .limit(10)
+        )
+
+        # ТОП по заданиям
+        top_tasks = await session.execute(
+            select(User.telegram_id, User.username, User.tasks_completed)
+            .order_by(User.tasks_completed.desc())
+            .limit(10)
+        )
+
+    text = "🏆 <b>ТОП ПОЛЬЗОВАТЕЛЕЙ</b>\n\n💰 <b>ПО БАЛАНСУ:</b>\n"
+
+    for i, user in enumerate(top_balance, 1):
+        username = user.username or f"ID{user.telegram_id}"
+        text += f"{i}. @{username}: {user.balance:,.0f} GRAM\n"
+
+    text += "\n🎯 <b>ПО ЗАДАНИЯМ:</b>\n"
+    for i, user in enumerate(top_tasks, 1):
+        username = user.username or f"ID{user.telegram_id}"
+        text += f"{i}. @{username}: {user.tasks_completed} заданий\n"
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад к управлению",
+            callback_data=AdminCallback(action="users").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "user_analytics"))
+async def show_user_analytics(callback: CallbackQuery):
+    """Показать аналитику пользователей"""
+    async with get_session() as session:
+        # Общая статистика
+        total_users = await session.execute(select(func.count(User.id)))
+        week_ago = datetime.utcnow() - timedelta(days=7)
+
+        new_users = await session.execute(
+            select(func.count(User.id))
+            .where(User.created_at >= week_ago)
+        )
+
+        active_users = await session.execute(
+            select(func.count(User.id))
+            .where(User.last_activity >= week_ago)
+        )
+
+        # По уровням
+        levels_stats = await session.execute(
+            select(User.level, func.count(User.id))
+            .group_by(User.level)
+        )
+
+    total_count = total_users.scalar() or 0
+    new_count = new_users.scalar() or 0
+    active_count = active_users.scalar() or 0
+
+    text = f"""📊 <b>АНАЛИТИКА ПОЛЬЗОВАТЕЛЕЙ</b>
+
+👥 <b>ОБЩАЯ СТАТИСТИКА:</b>
+├ Всего пользователей: {total_count:,}
+├ Новых за неделю: {new_count:,}
+├ Активных за неделю: {active_count:,}
+└ Коэффициент активности: {(active_count / total_count * 100 if total_count > 0 else 0):.1f}%
+
+📈 <b>ПО УРОВНЯМ:</b>"""
+
+    levels_data = dict(levels_stats.fetchall())
+    level_names = {"bronze": "🥉 Bronze", "silver": "🥈 Silver", "gold": "🥇 Gold", "premium": "💎 Premium"}
+
+    for level, name in level_names.items():
+        count = levels_data.get(level, 0)
+        text += f"\n├ {name}: {count:,}"
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад к управлению",
+            callback_data=AdminCallback(action="users").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "mass_bonus"))
+async def start_mass_bonus(callback: CallbackQuery, state: FSMContext):
+    """Начать массовое начисление"""
+    await state.set_state(AdminStates.entering_mass_bonus_amount)
+
+    text = """💰 <b>МАССОВОЕ НАЧИСЛЕНИЕ</b>
+
+Введите сумму для начисления всем пользователям:
+
+💡 <b>Примеры:</b>
+- 100 - начислить 100 GRAM всем
+- 500 - начислить 500 GRAM всем
+
+⚠️ <b>Внимание:</b> Операция необратима!
+
+❌ <i>Для отмены отправьте /cancel</i>"""
+
+    await callback.message.edit_text(text)
+    await callback.answer()
+
+
+@router.message(AdminStates.entering_mass_bonus_amount)
+async def process_mass_bonus(
+        message: Message,
+        state: FSMContext,
+        user_service: UserService
+):
+    """Обработать массовое начисление"""
+    try:
+        amount = Decimal(message.text.strip())
+
+        if amount <= 0:
+            await message.answer("❌ Сумма должна быть больше 0")
+            return
+
+        # Получаем всех активных пользователей
+        async with get_session() as session:
+            result = await session.execute(
+                select(User.telegram_id).where(
+                    and_(User.is_active == True, User.is_banned == False)
+                )
+            )
+            user_ids = [row[0] for row in result.fetchall()]
+
+        # Подтверждение
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text="✅ Подтвердить",
+                callback_data=f"confirm_mass_bonus_{amount}"
+            ),
+            InlineKeyboardButton(
+                text="❌ Отмена",
+                callback_data="cancel_mass_bonus"
+            )
+        )
+
+        await state.update_data(amount=float(amount), user_ids=user_ids)
+
+        text = f"""💰 <b>ПОДТВЕРЖДЕНИЕ МАССОВОГО НАЧИСЛЕНИЯ</b>
+
+💰 Сумма: {amount:,.0f} GRAM на пользователя
+👥 Пользователей: {len(user_ids):,}
+💳 Общая сумма: {float(amount) * len(user_ids):,.0f} GRAM
+
+⚠️ <b>Эта операция необратима!</b>"""
+
+        await message.answer(text, reply_markup=builder.as_markup())
+
+    except (ValueError, InvalidOperation):
+        await message.answer("❌ Введите корректную сумму")
+
+
+@router.callback_query(F.data.startswith("confirm_mass_bonus_"))
+async def confirm_mass_bonus(callback: CallbackQuery, state: FSMContext, user_service: UserService):
+    """Подтвердить массовое начисление"""
+    data = await state.get_data()
+    amount = data.get('amount')
+    user_ids = data.get('user_ids', [])
+
+    if not amount or not user_ids:
+        await callback.answer("❌ Данные не найдены", show_alert=True)
+        await state.clear()
+        return
+
+    await callback.message.edit_text("⏳ Выполняется массовое начисление...")
+
+    success_count = 0
+    for user_id in user_ids:
+        success = await user_service.update_balance(
+            user_id,
+            amount,
+            "admin_bonus",
+            f"Массовое начисление от администратора #{callback.from_user.id}"
+        )
+        if success:
+            success_count += 1
+
+    text = f"""✅ <b>МАССОВОЕ НАЧИСЛЕНИЕ ЗАВЕРШЕНО</b>
+
+💰 Начислено: {amount:,.0f} GRAM
+👥 Успешно: {success_count:,} пользователей
+❌ Ошибок: {len(user_ids) - success_count}
+
+Общая сумма: {float(amount) * success_count:,.0f} GRAM"""
+
+    await callback.message.edit_text(text, reply_markup=get_admin_menu_keyboard())
+    await state.clear()
+    await callback.answer("✅ Массовое начисление завершено")
+
+@router.callback_query(AdminCallback.filter(F.action == "subscriptions"))
+async def show_subscriptions_menu(callback: CallbackQuery):
+    """Показать меню управления подписками"""
+
+    async with get_session() as session:
+        # Получаем все подписки
+        result = await session.execute(
+            select(RequiredSubscription)
+            .order_by(RequiredSubscription.order_index, RequiredSubscription.id)
+        )
+        subscriptions = list(result.scalars().all())
+
+        active_count = len([s for s in subscriptions if s.is_active])
+
+    text = f"""📺 <b>УПРАВЛЕНИЕ ПОДПИСКАМИ</b>
+
+📊 <b>СТАТИСТИКА:</b>
+├ Всего каналов: {len(subscriptions)}
+├ Активных: {active_count}
+├ Отключенных: {len(subscriptions) - active_count}
+└ Статус системы: {'🟢 Включена' if active_count > 0 else '🔴 Отключена'}
+
+⚙️ <b>ФУНКЦИИ:</b>
+• Добавление обязательных каналов
+• Включение/отключение каналов
+• Изменение порядка отображения
+• Просмотр статистики подписок
+
+💡 <i>Админы не проверяются на подписки</i>"""
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    # Управление каналами
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить канал",
+            callback_data=AdminCallback(action="add_subscription").pack()
+        )
+    )
+
+    if subscriptions:
+        builder.row(
+            InlineKeyboardButton(
+                text="📋 Список каналов",
+                callback_data=AdminCallback(action="list_subscriptions").pack()
+            ),
+            InlineKeyboardButton(
+                text="📊 Статистика",
+                callback_data=AdminCallback(action="subscription_stats").pack()
+            )
+        )
+
+    # Массовые действия
+    if subscriptions:
+        builder.row(
+            InlineKeyboardButton(
+                text="🟢 Включить все",
+                callback_data=AdminCallback(action="enable_all_subs").pack()
+            ),
+            InlineKeyboardButton(
+                text="🔴 Отключить все",
+                callback_data=AdminCallback(action="disable_all_subs").pack()
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад в админку",
+            callback_data=AdminCallback(action="menu").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "add_subscription"))
+async def start_add_subscription(callback: CallbackQuery, state: FSMContext):
+    """Начать добавление канала"""
+
+    await state.set_state(AdminStates.entering_channel_url)
+
+    text = """➕ <b>ДОБАВЛЕНИЕ КАНАЛА</b>
+
+Введите ссылку на канал:
+
+💡 <b>Поддерживаемые форматы:</b>
+• @username
+• https://t.me/username
+• https://t.me/joinchat/xxxxx
+
+📝 <b>Примеры:</b>
+• @my_channel
+• https://t.me/my_channel
+• https://t.me/joinchat/AAAA1A1aA1aA1a
+
+❌ <i>Для отмены отправьте /cancel</i>"""
+
+    await callback.message.edit_text(text)
+    await callback.answer()
+
+
+@router.message(AdminStates.entering_channel_url)
+async def process_channel_url(message: Message, state: FSMContext):
+    """Обработать ссылку на канал"""
+    from app.services.telegram_api_service import TelegramAPIService
+    from app.bot.utils.validators import TelegramValidator
+
+    url = message.text.strip()
+
+    # Валидация URL
+    is_valid, error = TelegramValidator.validate_channel_url(url)
+    if not is_valid:
+        await message.answer(f"❌ {error}\n\nПопробуйте еще раз:")
+        return
+
+    # Проверяем существование канала
+    telegram_api = TelegramAPIService()
+    channel_info = await telegram_api.get_chat_info(url)
+
+    if not channel_info:
+        await message.answer("❌ Канал не найден или недоступен\n\nПопробуйте еще раз:")
+        return
+
+    # Нормализуем URL
+    if url.startswith('@'):
+        normalized_url = f"https://t.me/{url[1:]}"
+        username = url
+    elif 'joinchat' in url or '+' in url:
+        normalized_url = url
+        username = channel_info.get('title', 'Приватный канал')
+    else:
+        normalized_url = url
+        username = f"@{channel_info.get('username', '')}"
+
+    # Проверяем, не добавлен ли уже
+    async with get_session() as session:
+        existing = await session.execute(
+            select(RequiredSubscription)
+            .where(RequiredSubscription.channel_url == normalized_url)
+        )
+
+        if existing.scalar_one_or_none():
+            await message.answer("❌ Этот канал уже добавлен в обязательные подписки")
+            await state.clear()
+            return
+
+        # Создаем запись
+        subscription = RequiredSubscription(
+            channel_username=username,
+            channel_title=channel_info.get('title'),
+            channel_url=normalized_url,
+            created_by=message.from_user.id,
+            order_index=0  # Добавляем в начало
+        )
+
+        session.add(subscription)
+        await session.commit()
+        await session.refresh(subscription)
+
+    text = f"""✅ <b>КАНАЛ ДОБАВЛЕН!</b>
+
+📺 <b>Канал:</b> {subscription.display_name}
+🔗 <b>Ссылка:</b> {normalized_url}
+📊 <b>Участников:</b> {channel_info.get('member_count', 'неизвестно')}
+
+Канал добавлен в список обязательных подписок и автоматически активирован."""
+
+    await message.answer(text, reply_markup=get_admin_menu_keyboard())
+    await state.clear()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "list_subscriptions"))
+async def show_subscriptions_list(callback: CallbackQuery):
+    """Показать список каналов"""
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(RequiredSubscription)
+            .order_by(RequiredSubscription.order_index, RequiredSubscription.id)
+        )
+        subscriptions = list(result.scalars().all())
+
+    if not subscriptions:
+        text = """📋 <b>СПИСОК КАНАЛОВ</b>
+
+📭 Обязательные каналы не настроены.
+
+Добавьте первый канал:"""
+
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text="➕ Добавить канал",
+                callback_data=AdminCallback(action="add_subscription").pack()
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=AdminCallback(action="subscriptions").pack()
+            )
+        )
+
+        await callback.message.edit_text(text, reply_markup=builder.as_markup())
+        await callback.answer()
+        return
+
+    text = f"""📋 <b>СПИСОК КАНАЛОВ</b>
+
+📊 Всего: {len(subscriptions)} каналов
+
+Выберите канал для управления:"""
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    # Список каналов
+    for subscription in subscriptions:
+        status_icon = "🟢" if subscription.is_active else "🔴"
+
+        button_text = f"{status_icon} {subscription.display_name}"
+
+        builder.row(
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=AdminCallback(action="manage_subscription", target_id=subscription.id).pack()
+            )
+        )
+
+    # Управление
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Добавить канал",
+            callback_data=AdminCallback(action="add_subscription").pack()
+        )
+    )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=AdminCallback(action="subscriptions").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "manage_subscription"))
+async def manage_subscription(callback: CallbackQuery, callback_data: AdminCallback):
+    """Управление конкретным каналом"""
+    subscription_id = callback_data.target_id
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(RequiredSubscription).where(RequiredSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        await callback.answer("❌ Канал не найден", show_alert=True)
+        return
+
+    status_text = "🟢 Активен" if subscription.is_active else "🔴 Отключен"
+
+    text = f"""📺 <b>УПРАВЛЕНИЕ КАНАЛОМ</b>
+
+🏷️ <b>Название:</b> {subscription.display_name}
+🔗 <b>Ссылка:</b> {subscription.channel_url}
+📊 <b>Статус:</b> {status_text}
+📅 <b>Добавлен:</b> {subscription.created_at.strftime('%d.%m.%Y %H:%M')}
+👤 <b>Админ:</b> ID{subscription.created_by}
+🔢 <b>Порядок:</b> {subscription.order_index}
+
+⚙️ <b>Доступные действия:</b>"""
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    # Включение/отключение
+    if subscription.is_active:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔴 Отключить",
+                callback_data=AdminCallback(action="disable_subscription", target_id=subscription.id).pack()
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="🟢 Включить",
+                callback_data=AdminCallback(action="enable_subscription", target_id=subscription.id).pack()
+            )
+        )
+
+    # Изменение порядка
+    builder.row(
+        InlineKeyboardButton(
+            text="⬆️ Поднять",
+            callback_data=AdminCallback(action="move_subscription_up", target_id=subscription.id).pack()
+        ),
+        InlineKeyboardButton(
+            text="⬇️ Опустить",
+            callback_data=AdminCallback(action="move_subscription_down", target_id=subscription.id).pack()
+        )
+    )
+
+    # Удаление
+    builder.row(
+        InlineKeyboardButton(
+            text="❌ Удалить канал",
+            callback_data=AdminCallback(action="delete_subscription", target_id=subscription.id).pack()
+        )
+    )
+
+    # Назад
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ К списку каналов",
+            callback_data=AdminCallback(action="list_subscriptions").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "enable_subscription"))
+async def enable_subscription(callback: CallbackQuery, callback_data: AdminCallback):
+    """Включить канал"""
+    subscription_id = callback_data.target_id
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(RequiredSubscription).where(RequiredSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
+
+        if subscription:
+            subscription.is_active = True
+            await session.commit()
+
+            await callback.answer("🟢 Канал включен")
+            await manage_subscription(callback, callback_data)
+        else:
+            await callback.answer("❌ Канал не найден", show_alert=True)
+
+
+@router.callback_query(AdminCallback.filter(F.action == "disable_subscription"))
+async def disable_subscription(callback: CallbackQuery, callback_data: AdminCallback):
+    """Отключить канал"""
+    subscription_id = callback_data.target_id
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(RequiredSubscription).where(RequiredSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
+
+        if subscription:
+            subscription.is_active = False
+            await session.commit()
+
+            await callback.answer("🔴 Канал отключен")
+            await manage_subscription(callback, callback_data)
+        else:
+            await callback.answer("❌ Канал не найден", show_alert=True)
+
+
+@router.callback_query(AdminCallback.filter(F.action == "delete_subscription"))
+async def delete_subscription_confirm(callback: CallbackQuery, callback_data: AdminCallback):
+    """Подтверждение удаления канала"""
+    subscription_id = callback_data.target_id
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(RequiredSubscription).where(RequiredSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        await callback.answer("❌ Канал не найден", show_alert=True)
+        return
+
+    text = f"""⚠️ <b>УДАЛЕНИЕ КАНАЛА</b>
+
+📺 <b>Канал:</b> {subscription.display_name}
+🔗 <b>Ссылка:</b> {subscription.channel_url}
+
+Вы уверены, что хотите удалить этот канал из обязательных подписок?
+
+❌ <b>Это действие необратимо!</b>"""
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Да, удалить",
+            callback_data=AdminCallback(action="delete_subscription_confirm", target_id=subscription.id).pack()
+        ),
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data=AdminCallback(action="manage_subscription", target_id=subscription.id).pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "delete_subscription_confirm"))
+async def delete_subscription_final(callback: CallbackQuery, callback_data: AdminCallback):
+    """Окончательное удаление канала"""
+    subscription_id = callback_data.target_id
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(RequiredSubscription).where(RequiredSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
+
+        if subscription:
+            channel_name = subscription.display_name
+            await session.delete(subscription)
+            await session.commit()
+
+            text = f"""✅ <b>КАНАЛ УДАЛЕН</b>
+
+📺 Канал "{channel_name}" удален из обязательных подписок.
+
+Пользователи больше не будут проверяться на подписку этого канала."""
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=get_admin_menu_keyboard()
+            )
+            await callback.answer("✅ Канал удален")
+        else:
+            await callback.answer("❌ Канал не найден", show_alert=True)
+
+
+@router.callback_query(AdminCallback.filter(F.action.in_(["enable_all_subs", "disable_all_subs"])))
+async def toggle_all_subscriptions(callback: CallbackQuery, callback_data: AdminCallback):
+    """Включить/отключить все каналы"""
+    enable = callback_data.action == "enable_all_subs"
+
+    async with get_session() as session:
+        result = await session.execute(select(RequiredSubscription))
+        subscriptions = list(result.scalars().all())
+
+        count = 0
+        for subscription in subscriptions:
+            if subscription.is_active != enable:
+                subscription.is_active = enable
+                count += 1
+
+        await session.commit()
+
+    action_text = "включены" if enable else "отключены"
+    icon = "🟢" if enable else "🔴"
+
+    await callback.answer(f"{icon} {count} каналов {action_text}")
+    await show_subscriptions_menu(callback)
+
+
+@router.callback_query(AdminCallback.filter(F.action == "subscription_stats"))
+async def show_subscription_stats(callback: CallbackQuery):
+    """Показать статистику подписок"""
+
+    from app.services.telegram_api_service import TelegramAPIService
+    telegram_api = TelegramAPIService()
+
+    async with get_session() as session:
+        # Получаем все каналы
+        channels_result = await session.execute(
+            select(RequiredSubscription)
+            .order_by(RequiredSubscription.order_index, RequiredSubscription.id)
+        )
+        channels = list(channels_result.scalars().all())
+
+        # Общая статистика пользователей
+        total_users = await session.execute(select(func.count(User.id)))
+        total_count = total_users.scalar() or 0
+
+        # Активные пользователи за неделю
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        active_users_result = await session.execute(
+            select(User.telegram_id)
+            .where(
+                and_(
+                    User.is_active == True,
+                    User.is_banned == False,
+                    User.last_activity >= week_ago
+                )
+            )
+        )
+        active_users = [row[0] for row in active_users_result.fetchall()]
+
+        # Админы (исключаем из проверки)
+        admins_count = len([uid for uid in active_users if uid in settings.ADMIN_IDS])
+        non_admin_users = [uid for uid in active_users if uid not in settings.ADMIN_IDS]
+
+    if not channels:
+        text = """📊 <b>СТАТИСТИКА ПОДПИСОК</b>
+
+📭 Обязательные каналы не настроены.
+
+Добавьте каналы для получения статистики."""
+
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text="➕ Добавить канал",
+                callback_data=AdminCallback(action="add_subscription").pack()
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=AdminCallback(action="subscriptions").pack()
+            )
+        )
+
+        await callback.message.edit_text(text, reply_markup=builder.as_markup())
+        await callback.answer()
+        return
+
+    # Инициализируем сообщение о загрузке
+    await callback.message.edit_text("📊 Загрузка статистики подписок...")
+
+    channel_stats = []
+    total_subscribed = 0
+    total_checks = 0
+
+    # Проверяем подписки для каждого канала
+    for channel in channels:
+        if not channel.is_active:
+            continue
+
+        subscribed_count = 0
+        checked_count = 0
+
+        # Проверяем подписки активных пользователей (не админов)
+        for user_id in non_admin_users[:50]:  # Ограничиваем для производительности
+            try:
+                is_subscribed = await telegram_api.check_user_subscription(
+                    user_id, channel.channel_url
+                )
+                checked_count += 1
+                if is_subscribed:
+                    subscribed_count += 1
+
+                # Небольшая задержка чтобы не превысить лимиты API
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                logger.warning(f"Failed to check subscription for user {user_id}: {e}")
+                continue
+
+        subscription_rate = (subscribed_count / checked_count * 100) if checked_count > 0 else 0
+
+        channel_stats.append({
+            'channel': channel,
+            'subscribed': subscribed_count,
+            'checked': checked_count,
+            'rate': subscription_rate
+        })
+
+        total_subscribed += subscribed_count
+        total_checks += checked_count
+
+    # Получаем информацию о каналах
+    for stat in channel_stats:
+        try:
+            channel_info = await telegram_api.get_chat_info(stat['channel'].channel_url)
+            stat['member_count'] = channel_info.get('member_count', 0) if channel_info else 0
+        except:
+            stat['member_count'] = 0
+
+    # Формируем текст статистики
+    overall_rate = (total_subscribed / total_checks * 100) if total_checks > 0 else 0
+
+    text = f"""📊 <b>СТАТИСТИКА ПОДПИСОК</b>
+
+👥 <b>ОБЩИЕ ПОКАЗАТЕЛИ:</b>
+├ Всего пользователей: {total_count:,}
+├ Активных пользователей: {len(active_users):,}
+├ Админов (не проверяются): {admins_count}
+├ Проверено пользователей: {len(non_admin_users):,}
+└ Общий уровень подписок: {overall_rate:.1f}%
+
+📺 <b>ПО КАНАЛАМ:</b>"""
+
+    active_channels = [s for s in channel_stats if s['channel'].is_active]
+
+    if not active_channels:
+        text += "\n📭 Нет активных каналов"
+    else:
+        for i, stat in enumerate(active_channels, 1):
+            channel = stat['channel']
+            subscribed = stat['subscribed']
+            checked = stat['checked']
+            rate = stat['rate']
+            member_count = stat['member_count']
+
+            text += f"\n\n{i}. <b>{channel.display_name}</b>"
+            text += f"\n├ Подписано: {subscribed}/{checked} ({rate:.1f}%)"
+            text += f"\n├ Участников в канале: {member_count:,}"
+            text += f"\n└ Статус: {'🟢 Активен' if channel.is_active else '🔴 Отключен'}"
+
+    # Анализ и рекомендации
+    text += f"\n\n📈 <b>АНАЛИЗ:</b>"
+
+    if overall_rate >= 90:
+        text += "\n✅ Отличный уровень подписок!"
+    elif overall_rate >= 70:
+        text += "\n⚠️ Хороший уровень, но есть потери"
+    elif overall_rate >= 50:
+        text += "\n❌ Средний уровень, много отписок"
+    else:
+        text += "\n💥 Низкий уровень подписок!"
+
+    if len(active_channels) > 3:
+        text += "\n💡 Много каналов может снижать конверсию"
+
+    # Рекомендации
+    worst_channel = min(active_channels, key=lambda x: x['rate']) if active_channels else None
+    if worst_channel and worst_channel['rate'] < 50:
+        text += f"\n🔍 Проблемный канал: {worst_channel['channel'].display_name}"
+
+    # Кнопки навигации и действий
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    # Обновить статистику
+    builder.row(
+        InlineKeyboardButton(
+            text="🔄 Обновить статистику",
+            callback_data=AdminCallback(action="subscription_stats").pack()
+        )
+    )
+
+    # Детальная статистика по каналам
+    if active_channels:
+        builder.row(
+            InlineKeyboardButton(
+                text="📋 Детали по каналам",
+                callback_data=AdminCallback(action="detailed_channel_stats").pack()
+            )
+        )
+
+    # Экспорт данных
+    builder.row(
+        InlineKeyboardButton(
+            text="📊 Экспорт CSV",
+            callback_data=AdminCallback(action="export_subscription_stats").pack()
+        )
+    )
+
+    # Назад
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=AdminCallback(action="subscriptions").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "detailed_channel_stats"))
+async def show_detailed_channel_stats(callback: CallbackQuery):
+    """Показать детальную статистику по каналам"""
+
+    from app.services.telegram_api_service import TelegramAPIService
+    telegram_api = TelegramAPIService()
+
+    await callback.message.edit_text("📊 Загрузка детальной статистики...")
+
+    async with get_session() as session:
+        # Получаем активные каналы
+        channels_result = await session.execute(
+            select(RequiredSubscription)
+            .where(RequiredSubscription.is_active == True)
+            .order_by(RequiredSubscription.order_index)
+        )
+        channels = list(channels_result.scalars().all())
+
+        if not channels:
+            text = "📭 Нет активных каналов для анализа"
+
+            from aiogram.utils.keyboard import InlineKeyboardBuilder
+            from aiogram.types import InlineKeyboardButton
+
+            builder = InlineKeyboardBuilder()
+            builder.row(
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=AdminCallback(action="subscription_stats").pack()
+                )
+            )
+
+            await callback.message.edit_text(text, reply_markup=builder.as_markup())
+            await callback.answer()
+            return
+
+        # Получаем пользователей
+        users_result = await session.execute(
+            select(User.telegram_id, User.username, User.level)
+            .where(
+                and_(
+                    User.is_active == True,
+                    User.is_banned == False
+                )
+            )
+            .limit(30)  # Ограничиваем для производительности
+        )
+        users = list(users_result.fetchall())
+        non_admin_users = [u for u in users if u.telegram_id not in settings.ADMIN_IDS]
+
+    text = f"""📊 <b>ДЕТАЛЬНАЯ СТАТИСТИКА</b>
+
+👥 Проверено пользователей: {len(non_admin_users)}
+📺 Активных каналов: {len(channels)}
+
+📈 <b>ПОДРОБНОСТИ ПО КАНАЛАМ:</b>"""
+
+    for i, channel in enumerate(channels, 1):
+        # Получаем информацию о канале
+        try:
+            channel_info = await telegram_api.get_chat_info(channel.channel_url)
+            member_count = channel_info.get('member_count', 0) if channel_info else 0
+        except:
+            member_count = 0
+
+        # Считаем подписки (упрощенная версия для примера)
+        subscribed_count = 0
+        total_checked = min(len(non_admin_users), 20)  # Проверяем только первых 20
+
+        for user in non_admin_users[:20]:
+            try:
+                is_subscribed = await telegram_api.check_user_subscription(
+                    user.telegram_id, channel.channel_url
+                )
+                if is_subscribed:
+                    subscribed_count += 1
+                await asyncio.sleep(0.05)  # Небольшая задержка
+            except:
+                continue
+
+        subscription_rate = (subscribed_count / total_checked * 100) if total_checked > 0 else 0
+
+        text += f"\n\n{i}. <b>{channel.display_name}</b>"
+        text += f"\n├ 📊 Подписано: {subscribed_count}/{total_checked} ({subscription_rate:.1f}%)"
+        text += f"\n├ 👥 Участников: {member_count:,}"
+        text += f"\n├ 📅 Добавлен: {channel.created_at.strftime('%d.%m.%Y')}"
+        text += f"\n└ 🔗 Ссылка: {channel.channel_url}"
+
+    # Анализ эффективности
+    text += f"\n\n🎯 <b>АНАЛИЗ ЭФФЕКТИВНОСТИ:</b>"
+    text += f"\n• Каналы упорядочены по приоритету"
+    text += f"\n• Первые каналы критически важны"
+    text += f"\n• Рекомендуется ≥80% подписок"
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="🔄 Обновить",
+            callback_data=AdminCallback(action="detailed_channel_stats").pack()
+        )
+    )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ К общей статистике",
+            callback_data=AdminCallback(action="subscription_stats").pack()
+        )
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(AdminCallback.filter(F.action == "export_subscription_stats"))
+async def export_subscription_stats(callback: CallbackQuery):
+    """Экспорт статистики подписок"""
+
+    current_time = datetime.utcnow().strftime('%d.%m.%Y %H:%M')
+
+    async with get_session() as session:
+        # Получаем данные
+        channels_result = await session.execute(
+            select(RequiredSubscription)
+            .order_by(RequiredSubscription.order_index)
+        )
+        channels = list(channels_result.scalars().all())
+
+        users_count = await session.execute(select(func.count(User.id)))
+        total_users = users_count.scalar() or 0
+
+    # Формируем CSV-подобные данные в текстовом виде
+    export_text = f"""📊 <b>ЭКСПОРТ СТАТИСТИКИ ПОДПИСОК</b>
+
+📅 <b>Дата экспорта:</b> {current_time}
+👥 <b>Всего пользователей:</b> {total_users:,}
+📺 <b>Всего каналов:</b> {len(channels)}
+
+📋 <b>ДАННЫЕ ПО КАНАЛАМ:</b>
+
+| № | Канал | Статус | Ссылка |
+|---|-------|--------|--------|"""
+
+    for i, channel in enumerate(channels, 1):
+        status = "Активен" if channel.is_active else "Отключен"
+        export_text += f"\n| {i} | {channel.display_name} | {status} | {channel.channel_url} |"
+
+    export_text += f"\n\n📈 <b>НАСТРОЙКИ ЭКСПОРТА:</b>"
+    export_text += f"\n• Формат: Текстовая таблица"
+    export_text += f"\n• Кодировка: UTF-8"
+    export_text += f"\n• Источник: PR GRAM Bot Admin Panel"
+
+    export_text += f"\n\n💡 <i>Для полного CSV экспорта обратитесь к разработчику</i>"
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="📋 Скопировать данные",
+            callback_data="copy_export_data"
+        )
+    )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад к статистике",
+            callback_data=AdminCallback(action="subscription_stats").pack()
+        )
+    )
+
+    await callback.message.edit_text(export_text, reply_markup=builder.as_markup())
+    await callback.answer("📊 Данные экспортированы")
 
 # =============================================================================
 # СИСТЕМНЫЕ ФУНКЦИИ

@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Numeric, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship
 
 from app.database.database import Base
@@ -14,7 +14,7 @@ class UserSettings(Base):
     __tablename__ = "user_settings"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.telegram_id"), unique=True, nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id"), unique=True, nullable=False)
     
     # =============================================================================
     # ЛОКАЛИЗАЦИЯ
